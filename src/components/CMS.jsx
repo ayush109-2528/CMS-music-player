@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase' // Ensure this path is correct
+import { supabase } from '../lib/supabase' 
 import { usePlayer } from '../contexts/PlayerContext'
-import AuthPage from './AuthPage' // ⚠️ Import your AuthPage component here
+import AuthPage from './AuthPage'
 import { 
   Upload, Music, Image as ImageIcon, Plus, Trash2, 
   Play, Disc, Loader2, Search, Mic2, Layers, LogOut 
