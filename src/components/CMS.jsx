@@ -4,15 +4,13 @@ import { usePlayer } from '../contexts/PlayerContext'
 import AuthPage from './AuthPage'
 import { 
   Upload, Music, Image as ImageIcon, Plus, Trash2, 
-  Play, Disc, Loader2, Search, Mic2, Layers, LogOut, AlertCircle 
+  Play, Disc, Loader2, Search, Mic2, Layers, LogOut, X 
 } from 'lucide-react'
 
 export default function CMS() {
-  // --- AUTH STATE ---
   const [session, setSession] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
 
-  // --- CMS STATE ---
   const [genres, setGenres] = useState([])
   const [tracks, setTracks] = useState([])
   const [form, setForm] = useState({
@@ -28,7 +26,7 @@ export default function CMS() {
   const [newGenre, setNewGenre] = useState('')
   const { actions } = usePlayer()
 
-  // 1. CHECK AUTH ON MOUNT
+  // --- AUTH CHECK ---
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
@@ -65,7 +63,7 @@ export default function CMS() {
     }
   }
 
-  // --- AUTH ACTIONS ---
+  // --- ACTIONS ---
   const authActions = {
     signInWithPassword: (email, password) => supabase.auth.signInWithPassword({ email, password }),
     signUp: (email, password) => supabase.auth.signUp({ email, password }),
@@ -81,7 +79,7 @@ export default function CMS() {
     setTracks([])
   }
 
-  // --- CMS ACTIONS ---
+  // --- GENRE ACTIONS ---
   const addGenre = async () => {
     if (!newGenre.trim()) return
     const { error } = await supabase.from('genres').insert({
@@ -93,6 +91,23 @@ export default function CMS() {
       loadData()
     } else {
       alert('Error adding genre: ' + error.message)
+    }
+  }
+
+  // 🔥 NEW: DELETE GENRE FUNCTION
+  const deleteGenre = async (id) => {
+    if (!window.confirm("Delete this genre?")) return
+    
+    const { error } = await supabase
+      .from('genres')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      // Supabase usually blocks delete if tracks are using this genre (Foreign Key constraint)
+      alert("Cannot delete: This genre might be assigned to existing tracks.")
+    } else {
+      loadData()
     }
   }
 
@@ -108,7 +123,6 @@ export default function CMS() {
     }
   }
 
-  // 🔥 UPDATED UPLOAD LOGIC WITH ERROR HANDLING
   const uploadTrack = async () => {
     if (!form.title.trim() || !form.audio) {
       alert('Title and audio file are required!')
@@ -126,16 +140,13 @@ export default function CMS() {
         const thumbExt = form.thumbnail.name.split('.').pop()
         thumbPath = `thumbnails/${timeStamp}_${Math.random().toString(36).substr(2, 5)}.${thumbExt}`
         
-        // Upload Thumbnail
         const { error: thumbError } = await supabase.storage.from('music-cms').upload(thumbPath, form.thumbnail)
         if (thumbError) throw new Error("Thumbnail upload failed: " + thumbError.message)
       }
 
-      // Upload Audio
       const { error: audioError } = await supabase.storage.from('music-cms').upload(audioPath, form.audio)
       if (audioError) throw new Error("Audio upload failed: " + audioError.message)
 
-      // Insert DB Record
       const { error: dbError } = await supabase.from('cms_tracks').insert({
         title: form.title.trim(),
         artist: form.artist.trim() || 'Unknown Artist',
@@ -145,9 +156,8 @@ export default function CMS() {
         duration: 180 
       })
 
-      if (dbError) throw dbError // Catch DB permission errors
+      if (dbError) throw dbError
 
-      // Reset Form on Success
       setForm({ title: '', artist: '', thumbnail: null, audio: null, genre_id: '' })
       setThumbPreview(null)
       loadData()
@@ -180,19 +190,8 @@ export default function CMS() {
     })
   }
 
-  // --- RENDER ---
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-        <Loader2 className="w-10 h-10 text-violet-500 animate-spin" />
-      </div>
-    )
-  }
-
-  if (!session) {
-    return <AuthPage {...authActions} />
-  }
+  if (authLoading) return <div className="min-h-screen bg-zinc-950 flex items-center justify-center"><Loader2 className="w-10 h-10 text-violet-500 animate-spin" /></div>
+  if (!session) return <AuthPage {...authActions} />
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 p-6 md:p-12 font-sans selection:bg-violet-500/30">
@@ -276,7 +275,6 @@ export default function CMS() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  {/* Image Drag/Drop */}
                   <label className="cursor-pointer group relative aspect-square rounded-2xl border-2 border-dashed border-zinc-700 hover:border-violet-500/50 bg-zinc-950/30 flex flex-col items-center justify-center transition-all overflow-hidden">
                     <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileSelect(e, 'thumbnail')} />
                     {thumbPreview ? (
@@ -294,7 +292,6 @@ export default function CMS() {
                     )}
                   </label>
 
-                  {/* Audio Drag/Drop */}
                   <label className={`cursor-pointer group relative aspect-square rounded-2xl border-2 border-dashed ${form.audio ? 'border-emerald-500/50 bg-emerald-500/10' : 'border-zinc-700 hover:border-violet-500/50 bg-zinc-950/30'} flex flex-col items-center justify-center transition-all`}>
                     <input type="file" accept="audio/*" className="hidden" onChange={(e) => handleFileSelect(e, 'audio')} />
                     <Music className={`w-8 h-8 mb-2 transition-colors ${form.audio ? 'text-emerald-400' : 'text-zinc-600 group-hover:text-violet-400'}`} />
@@ -316,7 +313,7 @@ export default function CMS() {
               </div>
             </div>
 
-            {/* GENRES CARD */}
+            {/* 🔥 GENRES CARD (UPDATED WITH DELETE) */}
             <div className="bg-zinc-900/40 backdrop-blur-xl border border-white/10 rounded-3xl p-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-bold flex items-center gap-2">
@@ -342,9 +339,20 @@ export default function CMS() {
 
               <div className="flex flex-wrap gap-2">
                 {genres.map(genre => (
-                  <span key={genre.id} className="px-3 py-1.5 bg-zinc-800/50 border border-white/5 rounded-lg text-xs font-medium text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors cursor-default">
-                    {genre.name}
-                  </span>
+                  <div 
+                    key={genre.id} 
+                    className="group flex items-center gap-2 px-3 py-1.5 bg-zinc-800/50 border border-white/5 rounded-lg text-xs font-medium text-zinc-300 hover:bg-zinc-700 transition-colors cursor-default"
+                  >
+                    <span>{genre.name}</span>
+                    {/* Delete Icon - Shows on Hover */}
+                    <button 
+                        onClick={() => deleteGenre(genre.id)}
+                        className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400 transition-all"
+                        title="Delete Genre"
+                    >
+                        <X className="w-3 h-3" />
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>
