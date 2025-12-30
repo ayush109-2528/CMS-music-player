@@ -4,7 +4,7 @@ import { usePlayer } from '../contexts/PlayerContext'
 import AuthPage from './AuthPage'
 import { 
   Upload, Music, Image as ImageIcon, Plus, Trash2, 
-  Play, Disc, Loader2, Search, Mic2, Layers, LogOut 
+  Play, Disc, Loader2, Search, Mic2, Layers, LogOut, AlertCircle 
 } from 'lucide-react'
 
 export default function CMS() {
@@ -33,7 +33,7 @@ export default function CMS() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
       setAuthLoading(false)
-      if (session) loadData() // Only load data if logged in
+      if (session) loadData()
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -65,14 +65,14 @@ export default function CMS() {
     }
   }
 
-  // --- AUTH ACTIONS (Passed to AuthPage) ---
+  // --- AUTH ACTIONS ---
   const authActions = {
     signInWithPassword: (email, password) => supabase.auth.signInWithPassword({ email, password }),
     signUp: (email, password) => supabase.auth.signUp({ email, password }),
     signInWithOtp: (email) => supabase.auth.signInWithOtp({ email }),
-    verifyOtp: (email, token) => supabase.auth.verifyOtp({ email, token, type: 'magiclink' }), // or 'signup' depending on context
+    verifyOtp: (email, token) => supabase.auth.verifyOtp({ email, token, type: 'magiclink' }),
     resetPassword: (email) => supabase.auth.resetPasswordForEmail(email),
-    onSuccess: () => {} // handled by onAuthStateChange
+    onSuccess: () => {} 
   }
 
   const handleSignOut = async () => {
@@ -87,10 +87,12 @@ export default function CMS() {
     const { error } = await supabase.from('genres').insert({
       name: newGenre.trim(),
       is_active: true
-    }) // RLS policy will handle user permission
+    }) 
     if (!error) {
       setNewGenre('')
       loadData()
+    } else {
+      alert('Error adding genre: ' + error.message)
     }
   }
 
@@ -106,6 +108,7 @@ export default function CMS() {
     }
   }
 
+  // 🔥 UPDATED UPLOAD LOGIC WITH ERROR HANDLING
   const uploadTrack = async () => {
     if (!form.title.trim() || !form.audio) {
       alert('Title and audio file are required!')
@@ -122,12 +125,18 @@ export default function CMS() {
       if (form.thumbnail) {
         const thumbExt = form.thumbnail.name.split('.').pop()
         thumbPath = `thumbnails/${timeStamp}_${Math.random().toString(36).substr(2, 5)}.${thumbExt}`
-        await supabase.storage.from('music-cms').upload(thumbPath, form.thumbnail)
+        
+        // Upload Thumbnail
+        const { error: thumbError } = await supabase.storage.from('music-cms').upload(thumbPath, form.thumbnail)
+        if (thumbError) throw new Error("Thumbnail upload failed: " + thumbError.message)
       }
 
-      await supabase.storage.from('music-cms').upload(audioPath, form.audio)
+      // Upload Audio
+      const { error: audioError } = await supabase.storage.from('music-cms').upload(audioPath, form.audio)
+      if (audioError) throw new Error("Audio upload failed: " + audioError.message)
 
-      await supabase.from('cms_tracks').insert({
+      // Insert DB Record
+      const { error: dbError } = await supabase.from('cms_tracks').insert({
         title: form.title.trim(),
         artist: form.artist.trim() || 'Unknown Artist',
         thumbnail: thumbPath || null,
@@ -136,6 +145,9 @@ export default function CMS() {
         duration: 180 
       })
 
+      if (dbError) throw dbError // Catch DB permission errors
+
+      // Reset Form on Success
       setForm({ title: '', artist: '', thumbnail: null, audio: null, genre_id: '' })
       setThumbPreview(null)
       loadData()
@@ -150,8 +162,9 @@ export default function CMS() {
 
   const deleteTrack = async (id) => {
     if (window.confirm('Are you sure you want to delete this track?')) {
-      await supabase.from('cms_tracks').delete().eq('id', id)
-      loadData()
+      const { error } = await supabase.from('cms_tracks').delete().eq('id', id)
+      if (error) alert('Error deleting: ' + error.message)
+      else loadData()
     }
   }
 
@@ -167,9 +180,8 @@ export default function CMS() {
     })
   }
 
-  // --- CONDITIONAL RENDERING ---
+  // --- RENDER ---
 
-  // 1. Loading Spinner
   if (authLoading) {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
@@ -178,12 +190,10 @@ export default function CMS() {
     )
   }
 
-  // 2. Auth Page (If not logged in)
   if (!session) {
     return <AuthPage {...authActions} />
   }
 
-  // 3. Main CMS (If logged in)
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 p-6 md:p-12 font-sans selection:bg-violet-500/30">
       <div className="max-w-7xl mx-auto">
@@ -201,7 +211,6 @@ export default function CMS() {
             </p>
           </div>
           <div className="flex gap-4 items-center">
-            {/* Stats */}
             <div className="hidden md:flex gap-4">
               <div className="px-6 py-3 bg-zinc-900/50 rounded-2xl border border-white/5 flex flex-col items-center">
                 <span className="text-2xl font-bold text-white">{tracks.length}</span>
@@ -213,7 +222,6 @@ export default function CMS() {
               </div>
             </div>
             
-            {/* LOGOUT BUTTON */}
             <button 
               onClick={handleSignOut}
               className="px-4 py-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-2xl border border-red-500/20 transition-all flex items-center gap-2 font-semibold h-full"
@@ -229,9 +237,9 @@ export default function CMS() {
           {/* LEFT COLUMN: UPLOAD & GENRES (4 cols) */}
           <div className="xl:col-span-4 space-y-8">
             
-            {/* 📤 UPLOAD CARD */}
+            {/* UPLOAD CARD */}
             <div className="bg-zinc-900/40 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 p-4 opacity-10">
+              <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
                 <Upload className="w-32 h-32 rotate-12" />
               </div>
               
@@ -240,7 +248,6 @@ export default function CMS() {
               </h2>
 
               <div className="space-y-5 relative z-10">
-                {/* Text Inputs */}
                 <div className="space-y-4">
                   <input
                     value={form.title}
@@ -268,9 +275,8 @@ export default function CMS() {
                   </div>
                 </div>
 
-                {/* Custom File Inputs */}
                 <div className="grid grid-cols-2 gap-4">
-                  {/* Image Upload */}
+                  {/* Image Drag/Drop */}
                   <label className="cursor-pointer group relative aspect-square rounded-2xl border-2 border-dashed border-zinc-700 hover:border-violet-500/50 bg-zinc-950/30 flex flex-col items-center justify-center transition-all overflow-hidden">
                     <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileSelect(e, 'thumbnail')} />
                     {thumbPreview ? (
@@ -288,7 +294,7 @@ export default function CMS() {
                     )}
                   </label>
 
-                  {/* Audio Upload */}
+                  {/* Audio Drag/Drop */}
                   <label className={`cursor-pointer group relative aspect-square rounded-2xl border-2 border-dashed ${form.audio ? 'border-emerald-500/50 bg-emerald-500/10' : 'border-zinc-700 hover:border-violet-500/50 bg-zinc-950/30'} flex flex-col items-center justify-center transition-all`}>
                     <input type="file" accept="audio/*" className="hidden" onChange={(e) => handleFileSelect(e, 'audio')} />
                     <Music className={`w-8 h-8 mb-2 transition-colors ${form.audio ? 'text-emerald-400' : 'text-zinc-600 group-hover:text-violet-400'}`} />
@@ -310,7 +316,7 @@ export default function CMS() {
               </div>
             </div>
 
-            {/* 🏷️ GENRES CARD */}
+            {/* GENRES CARD */}
             <div className="bg-zinc-900/40 backdrop-blur-xl border border-white/10 rounded-3xl p-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-bold flex items-center gap-2">
@@ -344,7 +350,7 @@ export default function CMS() {
             </div>
           </div>
 
-          {/* RIGHT COLUMN: TRACK LIBRARY (8 cols) */}
+          {/* RIGHT COLUMN: LIBRARY (8 cols) */}
           <div className="xl:col-span-8">
             <div className="bg-zinc-900/20 backdrop-blur-md rounded-3xl p-8 border border-white/5 min-h-[800px]">
               <div className="flex justify-between items-end mb-8">
@@ -376,7 +382,6 @@ export default function CMS() {
                         className="group bg-zinc-950 border border-white/5 hover:border-violet-500/30 rounded-2xl p-3 hover:shadow-2xl hover:shadow-violet-900/10 transition-all duration-300 flex gap-4 md:block"
                         onClick={() => playTrack(track)}
                       >
-                        {/* Artwork */}
                         <div className="relative aspect-square w-24 md:w-full rounded-xl overflow-hidden bg-zinc-900 md:mb-4 shrink-0">
                           <img 
                             src={thumbUrl.publicUrl} 
@@ -390,7 +395,6 @@ export default function CMS() {
                           </div>
                         </div>
                         
-                        {/* Info */}
                         <div className="flex flex-col justify-center min-w-0 flex-1">
                           <h3 className="font-bold text-white text-lg truncate group-hover:text-violet-400 transition-colors">{track.title}</h3>
                           <p className="text-zinc-500 text-sm truncate mb-2">{track.artist}</p>
